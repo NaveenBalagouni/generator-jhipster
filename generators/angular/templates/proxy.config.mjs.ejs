@@ -9,7 +9,7 @@ const backendPort = <%= applicationTypeMicroservice ? gatewayServerPort : server
 export default {
 <%_ if (communicationSpringWebsocket) { _%>
   '/websocket': {
-    target: `ws://${backendHost}:${backendPort}`,
+    target: `wss://${backendHost}:${backendPort}`,
     ws: true,
   },
 <%_ } _%>
