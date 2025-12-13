@@ -37,7 +37,9 @@ runs:
   using: composite
   steps:
     # Make sure the sonar project folder exists.
-    - run: mkdir -p ./${{ inputs.sonar-project-key }}
+    - env:
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
+      run: mkdir -p "./$SONAR_PROJECT_KEY"
       shell: bash
 
     # Cache the main branch project for future PR analysis
@@ -84,6 +86,8 @@ runs:
     - name: 'Setup SonarQube'
       if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: |
         SONAR_HOST_URL=http://localhost:9000
         LOCAL_SONAR_LOGIN=admin
@@ -91,7 +95,7 @@ runs:
 
         SONAR_TOKEN=$(curl -s -u $LOCAL_SONAR_LOGIN:$LOCAL_SONAR_PASSWORD -X POST "$SONAR_HOST_URL/api/user_tokens/generate?login=$LOCAL_SONAR_LOGIN&name=token&type=USER_TOKEN" | jq -r '.token')
 
-        curl -s -u $SONAR_TOKEN: -X POST "$SONAR_HOST_URL/api/projects/create?name=${{ inputs.sonar-project-key }}&project=${{ inputs.sonar-project-key }}"
+        curl -s -u $SONAR_TOKEN: -X POST "$SONAR_HOST_URL/api/projects/create?name=$SONAR_PROJECT_KEY&project=$SONAR_PROJECT_KEY"
         curl -s -u $SONAR_TOKEN: -X POST "$SONAR_HOST_URL/api/permissions/add_user?login=$LOCAL_SONAR_LOGIN&permission=scan"
 
         echo "SONAR_HOST_URL=$SONAR_HOST_URL" >> $GITHUB_ENV
@@ -101,11 +105,13 @@ runs:
     - name: 'Run SonarQube analysis on main branch'
       if: github.event_name == 'pull_request' && steps.restore_cache.outputs.cache-matched-key
       shell: bash
+      env:
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: >-
         echo "::group::Scanning main branch application" &&
         ./mvnw --batch-mode initialize org.jacoco:jacoco-maven-plugin:prepare-agent sonar:sonar
         -Denforcer.skip=true
-        -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+        -Dsonar.projectKey="$SONAR_PROJECT_KEY"
         -Dsonar.branch.name=main &&
         echo "::endgroup::"
       working-directory: ${{ inputs.sonar-project-key }}
@@ -113,12 +119,14 @@ runs:
     - name: Add an empty scan to sonar main branch
       if: github.event_name == 'pull_request' && !steps.restore_cache.outputs.cache-matched-key
       shell: bash
+      env:
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: >-
         echo "::group::Scanning empty commit" &&
         git init &&
         git commit -m "Initial commit" --allow-empty &&
         docker run --net=host -v ".:/usr/src" -e SONAR_HOST_URL -e SONAR_TOKEN --rm sonarsource/sonar-scanner-cli
-        -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+        -Dsonar.projectKey="$SONAR_PROJECT_KEY"
         -Dsonar.branch.name=main &&
         echo "::endgroup::"
       working-directory: ${{ inputs.sonar-project-key }}
@@ -150,10 +158,11 @@ runs:
       shell: bash
       env:
         PR_NUMBER: ${{ github.event.pull_request.number }}
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: >-
         echo "::group::Scanning PR application changes" &&
         ./mvnw --batch-mode initialize org.jacoco:jacoco-maven-plugin:prepare-agent sonar:sonar
-        -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+        -Dsonar.projectKey="$SONAR_PROJECT_KEY"
         -Dsonar.pullrequest.key="$PR_NUMBER"
         -Dsonar.pullrequest.branch=dev
         -Dsonar.pullrequest.base=main
@@ -165,9 +174,11 @@ runs:
     - name: 'Wait for SonarQube tasks to complete'
       if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: |
         timeout 300s bash -c 'while :; do
-          response=$(curl -s -u $SONAR_TOKEN: "$SONAR_HOST_URL/api/ce/component?component=${{ inputs.sonar-project-key }}")
+          response=$(curl -s -u $SONAR_TOKEN: "$SONAR_HOST_URL/api/ce/component?component=$SONAR_PROJECT_KEY")
           queue_status=$(echo "$response" | jq -r ".queue[]?.status")
           current_status=$(echo "$response" | jq -r ".current.status")
 
@@ -192,15 +203,16 @@ runs:
       shell: bash
       env:
         PR_NUMBER: ${{ github.event.pull_request.number }}
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: |
         SONAR_RESPONSE=$(curl -s -u $SONAR_TOKEN: \
-          "$SONAR_HOST_URL/api/measures/component?component=${{ inputs.sonar-project-key }}&pullRequest=$PR_NUMBER&metricKeys=new_bugs,new_vulnerabilities,new_code_smells,new_coverage,new_duplicated_lines_density,new_violations")
+          "$SONAR_HOST_URL/api/measures/component?component=$SONAR_PROJECT_KEY&pullRequest=$PR_NUMBER&metricKeys=new_bugs,new_vulnerabilities,new_code_smells,new_coverage,new_duplicated_lines_density,new_violations")
         echo ":::group::PR SonarQube Analysis"
         echo "$SONAR_RESPONSE"
         echo "::endgroup::"
 
         SONAR_RESPONSE_MAIN=$(curl -s -u $SONAR_TOKEN: \
-          "$SONAR_HOST_URL/api/measures/component?component=${{ inputs.sonar-project-key }}&metricKeys=violations")
+          "$SONAR_HOST_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=violations")
         echo ":::group::SonarQube Analysis"
         echo "$SONAR_RESPONSE_MAIN"
         echo "::endgroup::"
@@ -234,7 +246,7 @@ runs:
         export_measure "new_duplicated_lines_density" "NEW_DUP"
 
         {
-          echo "## :bar_chart: SonarQube Analysis for ${{ inputs.sonar-project-key }}"
+          echo "## :bar_chart: SonarQube Analysis for $SONAR_PROJECT_KEY"
           echo ""
           echo "| Metric                      | Value       |"
           echo "|-----------------------------|-------------|"
@@ -250,7 +262,7 @@ runs:
             echo "<details><summary>Unresolved New Issues (click to expand)</summary>"
             echo ""
             ISSUES=$(curl -s -u $SONAR_TOKEN: \
-              "$SONAR_HOST_URL/api/issues/search?componentKeys=${{ inputs.sonar-project-key }}&resolved=false&pullRequest=$PR_NUMBER" | \
+              "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT_KEY&resolved=false&pullRequest=$PR_NUMBER" | \
               jq -r '.issues[] | "File: \(.component) Line: \(.line)\n  [\(.rule)] \(.message)\n"')
             echo "$ISSUES"
             echo "</details>"
@@ -271,9 +283,11 @@ runs:
       if: github.event_name == 'pull_request' && inputs.comment-token && steps.sonar_metrics.outcome == 'success'
       id: find_comment
       uses: peter-evans/find-comment@v4
+      env:
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       with:
         issue-number: ${{ github.event.pull_request.number }}
-        body-includes: '## :bar_chart: SonarQube Analysis for ${{ inputs.sonar-project-key }}'
+        body-includes: '## :bar_chart: SonarQube Analysis for ${{ env.SONAR_PROJECT_KEY }}'
         token: ${{ inputs.comment-token }}
 
     # Create or update PR comment with SonarQube results
