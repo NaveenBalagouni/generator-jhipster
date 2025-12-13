@@ -148,11 +148,13 @@ runs:
     - name: 'Run SonarQube analysis on PR changes'
       if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: >-
         echo "::group::Scanning PR application changes" &&
         ./mvnw --batch-mode initialize org.jacoco:jacoco-maven-plugin:prepare-agent sonar:sonar
         -Dsonar.projectKey=${{ inputs.sonar-project-key }}
-        -Dsonar.pullrequest.key=${{github.event.pull_request.number}}
+        -Dsonar.pullrequest.key="$PR_NUMBER"
         -Dsonar.pullrequest.branch=dev
         -Dsonar.pullrequest.base=main
         -Dsonar.scm.revision=$(git rev-parse HEAD) &&
@@ -188,9 +190,11 @@ runs:
       if: github.event_name == 'pull_request'
       id: sonar_metrics
       shell: bash
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
         SONAR_RESPONSE=$(curl -s -u $SONAR_TOKEN: \
-          "$SONAR_HOST_URL/api/measures/component?component=${{ inputs.sonar-project-key }}&pullRequest=${{ github.event.pull_request.number }}&metricKeys=new_bugs,new_vulnerabilities,new_code_smells,new_coverage,new_duplicated_lines_density,new_violations")
+          "$SONAR_HOST_URL/api/measures/component?component=${{ inputs.sonar-project-key }}&pullRequest=$PR_NUMBER&metricKeys=new_bugs,new_vulnerabilities,new_code_smells,new_coverage,new_duplicated_lines_density,new_violations")
         echo ":::group::PR SonarQube Analysis"
         echo "$SONAR_RESPONSE"
         echo "::endgroup::"
@@ -246,7 +250,7 @@ runs:
             echo "<details><summary>Unresolved New Issues (click to expand)</summary>"
             echo ""
             ISSUES=$(curl -s -u $SONAR_TOKEN: \
-              "$SONAR_HOST_URL/api/issues/search?componentKeys=${{ inputs.sonar-project-key }}&resolved=false&pullRequest=${{ github.event.pull_request.number }}" | \
+              "$SONAR_HOST_URL/api/issues/search?componentKeys=${{ inputs.sonar-project-key }}&resolved=false&pullRequest=$PR_NUMBER" | \
               jq -r '.issues[] | "File: \(.component) Line: \(.line)\n  [\(.rule)] \(.message)\n"')
             echo "$ISSUES"
             echo "</details>"
