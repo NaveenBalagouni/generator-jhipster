@@ -46,14 +46,17 @@ runs:
     - name: 'Cache project on main branch'
       if: github.ref == 'refs/heads/main'
       shell: bash
+      env:
+        APPLICATION_DIR: ${{ inputs.application-dir }}
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: |
-        cp -r ${{ inputs.application-dir }}/. .
+        cd "$SONAR_PROJECT_KEY"
+        cp -r "$APPLICATION_DIR"/. .
         rm -rf node_modules \
             package-lock.json \
             target/node \
             target/*.original \
             target/*.jar
-      working-directory: ${{ inputs.sonar-project-key }}
 
     - name: 'Store cache (main branch)'
       if: github.ref == 'refs/heads/main'
@@ -77,9 +80,11 @@ runs:
     - name: 'Start SonarQube server'
       if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        DOCKER_COMPOSE_FILE: ${{ inputs.docker-compose-file }}
       run: |
         echo "::group::Starting sonarqube"
-        docker compose -f ${{ inputs.docker-compose-file }} up --build -d --wait
+        docker compose -f "$DOCKER_COMPOSE_FILE" up --build -d --wait
         echo "::endgroup::"
 
     # Create SonarQube project
@@ -108,13 +113,13 @@ runs:
       env:
         SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: >-
+        cd "$SONAR_PROJECT_KEY" &&
         echo "::group::Scanning main branch application" &&
         ./mvnw --batch-mode initialize org.jacoco:jacoco-maven-plugin:prepare-agent sonar:sonar
         -Denforcer.skip=true
         -Dsonar.projectKey="$SONAR_PROJECT_KEY"
         -Dsonar.branch.name=main &&
         echo "::endgroup::"
-      working-directory: ${{ inputs.sonar-project-key }}
 
     - name: Add an empty scan to sonar main branch
       if: github.event_name == 'pull_request' && !steps.restore_cache.outputs.cache-matched-key
@@ -122,6 +127,7 @@ runs:
       env:
         SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: >-
+        cd "$SONAR_PROJECT_KEY" &&
         echo "::group::Scanning empty commit" &&
         git init &&
         git commit -m "Initial commit" --allow-empty &&
@@ -129,28 +135,33 @@ runs:
         -Dsonar.projectKey="$SONAR_PROJECT_KEY"
         -Dsonar.branch.name=main &&
         echo "::endgroup::"
-      working-directory: ${{ inputs.sonar-project-key }}
 
     # Prepare the repository for the PR changes
     - name: 'Clean repository for PR changes'
       if: github.event_name == 'pull_request'
       shell: bash
-      run: find . -mindepth 1 -not -path "./.git*" -delete
-      working-directory: ${{ inputs.sonar-project-key }}
+      env:
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
+      run: |
+        cd "$SONAR_PROJECT_KEY"
+        find . -mindepth 1 -not -path "./.git*" -delete
 
     - name: 'Apply PR changes to the repository'
       if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        APPLICATION_DIR: ${{ inputs.application-dir }}
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: |
         echo "::group::Creating changes commit"
-        rm -rf "${{ inputs.application-dir }}/.git"
-        cp -r ${{ inputs.application-dir }}/. .
+        rm -rf "$APPLICATION_DIR/.git"
+        cd "$SONAR_PROJECT_KEY"
+        cp -r "$APPLICATION_DIR"/. .
 
         git checkout -b dev
         git add -A
         git commit -m "Apply changes from PR branch"
         echo "::endgroup::"
-      working-directory: ${{ inputs.sonar-project-key }}
 
     # Run SonarQube analysis on the PR changes
     - name: 'Run SonarQube analysis on PR changes'
@@ -160,6 +171,7 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
       run: >-
+        cd "$SONAR_PROJECT_KEY" &&
         echo "::group::Scanning PR application changes" &&
         ./mvnw --batch-mode initialize org.jacoco:jacoco-maven-plugin:prepare-agent sonar:sonar
         -Dsonar.projectKey="$SONAR_PROJECT_KEY"
@@ -168,7 +180,6 @@ runs:
         -Dsonar.pullrequest.base=main
         -Dsonar.scm.revision=$(git rev-parse HEAD) &&
         echo "::endgroup::"
-      working-directory: ${{ inputs.sonar-project-key }}
 
     # Wait for SonarQube tasks to complete
     - name: 'Wait for SonarQube tasks to complete'
@@ -317,7 +328,9 @@ runs:
     - name: 'Stop SonarQube server'
       if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        DOCKER_COMPOSE_FILE: ${{ inputs.docker-compose-file }}
       run: |
         echo "::group::Stopping SonarQube"
-        docker compose -f ${{ inputs.docker-compose-file }} down
+        docker compose -f "$DOCKER_COMPOSE_FILE" down
         echo "::endgroup::"
