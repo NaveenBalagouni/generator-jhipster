@@ -1,7 +1,7 @@
 {
   "login": "admin",
 <%_ if (!authenticationTypeOauth2) { _%>
-  "password": "$2a$10$gSAhZrxMllrbgj/kkK9UceBPpChGWJA7SYIb1Mqo.n5aNLq1/oRrC",
+  "password": "<%= adminPasswordHash || '$2a$10$gSAhZrxMllrbgj/kkK9UceBPpChGWJA7SYIb1Mqo.n5aNLq1/oRrC' %>",
 <% } %>
   "first_name": "Administrator",
   "last_name": "Administrator",
